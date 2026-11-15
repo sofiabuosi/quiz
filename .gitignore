@@ -16,3 +16,6 @@
 
 # configuracoes locais de IDE
 **/.idea/
+
+# arquivos locais do IntelliJ
+**/*.iml
