@@ -1,0 +1,18 @@
+/build/
+/dist/
+/build-test/
+
+# arquivos gerados
+**/build/
+**/build-test/
+**/dist/*.jar
+**/*.class
+
+# dados locais
+.pitiupi/
+
+# backups
+**/*.backup-*
+
+# configuracoes locais de IDE
+**/.idea/

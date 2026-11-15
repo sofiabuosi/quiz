@@ -1,0 +1,62 @@
+INSTRUCOES DE COMPILACAO, EXECUCAO E TESTE
+
+1. REQUISITOS
+
+- Linux (Ubuntu/Debian recomendado).
+- JDK 17 ou superior.
+- Apache Ant.
+- Python 3 para as verificacoes do inicializador.
+- curl, ffmpeg e yt-dlp somente se for necessario preparar a midia novamente.
+
+Se o yt-dlp solicitar um runtime JavaScript, instale o Deno:
+
+    curl -fsSL https://deno.land/install.sh | sh
+    export PATH="$HOME/.deno/bin:$PATH"
+
+2. PREPARAR IMAGENS E SONS
+
+Os recursos usados pelo jogo ficam em:
+
+    plugins/quizamigos/src/quizamigos/assets/
+
+Arquivos esperados:
+
+- quiz-cover.jpg: imagem principal do menu.
+- olivia-rodrigo.jpg: imagem usada somente no quiz Olivia Rodrigo.
+- music.wav: musica de fundo.
+- curtain.wav: som da cortina.
+- reveal-to-score.wav: transicao entre resposta e placar.
+- scoreboard.wav: som de aplausos/placar.
+
+Se o plugin contiver o script scripts/setup-media.sh e for necessario preparar a midia
+novamente, execute:
+
+    cd ~/quiz/plugins/quizamigos
+    chmod +x scripts/setup-media.sh
+    ./scripts/setup-media.sh
+
+Os audios sao convertidos para WAV PCM e incluidos no JAR durante a compilacao.
+
+3. VERIFICAR E EXECUTAR A APLICACAO
+
+Na raiz ~/quiz, execute:
+
+    ./scripts/pitiupi.sh check
+    ./scripts/pitiupi.sh list
+    ./scripts/pitiupi.sh run --all
+
+Para executar somente o Quizamigos:
+
+    ./scripts/pitiupi.sh run --plugins quizamigos
+
+4. HISTORICO E LIMITACOES
+
+O historico e local: cada computador guarda seus proprios pontos, vitorias e partidas em:
+
+    ~/.pitiupi/quizamigos/
+
+Os historicos nao sao sincronizados entre computadores.
+
+No modo normal, o computador que inicia a partida coordena tecnicamente o relogio e a
+apuracao. Se esse computador fechar o Pitiupi ou perder a conexao, a partida pode nao ser
+concluida nos demais. Os relogios dos computadores devem estar sincronizados.

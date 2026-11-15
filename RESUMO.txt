@@ -1,0 +1,100 @@
+RESUMO
+
+IDENTIFICACAO
+
+O Quiz e um plugin desenvolvido em Java com interface Swing para integracao a plataforma
+Pitiupi. 
+
+Essa pasta contem o nucleo Pitiupi, o plugin Quizamigos, o inicializador, o catalogo de
+plugins, os testes automatizados e os recursos de imagem e audio.
+
+O pacote Java do plugin e "quizamigos". O identificador registrado no Pitiupi e
+"br.edu.ufsj.pitiupi.quizamigos".
+
+FUNCIONALIDADES
+
+- Modo com anfitriao: permite criar perguntas, cadastrar quatro alternativas, indicar a
+  resposta correta e escolher entre 10, 20, 30, 45 ou 60 segundos para a rodada.
+- Modo normal: disponibiliza o quiz Olivia Rodrigo, com cinco perguntas e tempo padrao
+  de 20 segundos por pergunta.
+- Comunicacao em rede: mensagens de pergunta, resposta e resultado sao serializadas e
+  enviadas aos participantes.
+- Temporizador compartilhado: a pergunta transmite um prazo absoluto, usado por todos
+  os participantes para sincronizar o encerramento da resposta.
+- Placar: apresenta os pontos e identifica o ganhador ou empate.
+- Persistencia: cada computador salva localmente o historico, os pontos e as vitorias.
+
+TECNOLOGIAS
+
+- Java 17 ou superior.
+- Swing para a interface grafica.
+- Apache Ant para compilacao, testes e geracao dos JARs.
+- Java Serialization para as mensagens de rede.
+- Java Sound para musica e efeitos WAV.
+- Arquivos Properties para persistencia local.
+
+ORGANIZACAO DO CODIGO
+
+O codigo do plugin fica em:
+
+    plugins/quizamigos/src/quizamigos/
+
+Os testes ficam em:
+
+    plugins/quizamigos/test/quizamigos/
+
+O nucleo Pitiupi fica na pasta:
+
+    pitiupi/
+
+O inicializador fica em:
+
+    scripts/pitiupi.sh
+
+O catalogo de plugins fica em:
+
+    plugins.registry.json
+
+COMPILACAO E EXECUCAO
+
+Na raiz ~/Documents/quiz/quiz, compile o nucleo:
+
+    cd pitiupi
+    ant jar
+    cd ..
+
+Compile o plugin e execute os testes:
+
+    ant -f plugins/quizamigos/build.xml clean jar test
+
+Verifique e abra a aplicacao:
+
+    ./scripts/pitiupi.sh check
+    ./scripts/pitiupi.sh list
+    ./scripts/pitiupi.sh run --all
+
+Para abrir somente o Quizamigos:
+
+    ./scripts/pitiupi.sh run --plugins quizamigos
+
+O comando de testes deve terminar com BUILD SUCCESSFUL.
+
+TESTES AUTOMATIZADOS
+
+1. QuizMessageSerializationTest: testa serializacao e recuperacao das mensagens de jogo.
+2. QuizStorePersistenceTest: testa identidade local, historico, pontuacao e deduplicacao.
+3. QuizCatalogTest: confirma o quiz Olivia Rodrigo com cinco perguntas e quatro alternativas.
+4. MusicPlayerAudioTest: verifica os efeitos, o fallback da cortina e a ausencia de som de clique.
+5. QuizNetworkProtocolTest: simula dois clientes recebendo o mesmo prazo e enviando respostas.
+
+Os testes automatizados verificam o protocolo simulado e os comportamentos cobertos pelas
+classes de teste. Eles nao substituem o teste manual da interface, do controle de musica
+ou da comunicacao entre dois computadores reais.
+
+LIMITACOES
+
+- O historico e local a cada computador; nao existe ranking global sincronizado.
+- No modo normal, o iniciador da partida e o coordenador tecnico do relogio e da apuracao.
+- A perda da conexao ou o encerramento do coordenador durante a partida pode interromper
+  a apuracao nos demais participantes.
+- Os relogios dos computadores precisam estar sincronizados.

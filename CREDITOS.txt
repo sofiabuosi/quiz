@@ -1,0 +1,17 @@
+CREDITOS DE IMAGEM E AUDIO
+
+Foto da Olivia Rodrigo:
+- Arquivo: olivia-rodrigo.jpg
+- Origem prevista: Wikimedia Commons, arquivo "Olivia Rodrigo 2.jpeg".
+- Fotografo: Raph_PH.
+- Licenca indicada na fonte: Creative Commons Atribuicao 4.0 (CC BY 4.0).
+- Fonte: https://commons.wikimedia.org/wiki/File:Olivia_Rodrigo_2.jpeg
+
+Imagem principal do menu:
+- Arquivo: quiz-cover.jpg
+- Origem: endereco de imagem fornecido pelo responsavel pelo projeto.
+- Fonte: https://img.magnific.com/vetores-gratis/ilustracao-de-um-jogo-vibrante_1308-181062.jpg
+
+Audio:
+- O script de preparacao baixa e converte os sons para WAV. A autorizacao deve ser respeitada
+  quanto ao uso, copia e redistribuicao dos arquivos.

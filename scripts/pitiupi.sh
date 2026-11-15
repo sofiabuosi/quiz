@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+# Build, instala plugins em PITIUPI_HOME/plugins e executa o núcleo (catálogo: plugins.registry.json).
+# Plugin do catálogo sem build.xml ou Makefile nesta máquina é ignorado.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CORE="${REPO_ROOT}/pitiupi"
+PITIUPI_HOME="${PITIUPI_HOME:-${REPO_ROOT}/.pitiupi}"
+PLUGINS_DIR="${PITIUPI_HOME}/plugins"
+REGISTRY="${REPO_ROOT}/plugins.registry.json"
+export PITIUPI_HOME
+
+usage() {
+  cat <<'EOF'
+Uso: scripts/pitiupi.sh <comando> [opções]
+
+Comandos:
+  run       Compila, atualiza plugins/ e abre a aplicação (padrão: --all)
+  build     Compila e atualiza plugins/
+  link      Só symlinks em PITIUPI_HOME/plugins (JARs já buildados)
+  list      Lista plugins do catálogo (id, categoria, JAR presente)
+  discover  Sugere entradas para o catálogo (pastas pitiupi.* com SPI)
+  check     Ferramentas no PATH + valida plugins.registry.json
+
+Opções (exclusivas; padrão em run/build/link: --all):
+  --all              Todos os plugins do catálogo
+  --plugins ids      IDs separados por vírgula (ex.: chat,screencast)
+  --category Nome    Social | Jogos | Streaming
+
+Exemplos:
+  ./scripts/pitiupi.sh list
+  ./scripts/pitiupi.sh run --all
+  ./scripts/pitiupi.sh run --category Social
+  ./scripts/pitiupi.sh run --plugins chat
+
+Linux: no terminal, ./scripts/pitiupi.sh run --all (Java do Linux).
+WSL: no terminal do Ubuntu, o mesmo comando (a janela abre no Java do Windows).
+Windows: no cmd, scripts\pitiupi.cmd run --all (Java do Windows).
+EOF
+}
+
+registry_python() {
+  python3 - "$REGISTRY" "$REPO_ROOT" "$@" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+registry_path = Path(sys.argv[1])
+repo = Path(sys.argv[2])
+mode = sys.argv[3]
+
+data = json.loads(registry_path.read_text(encoding="utf-8"))
+plugins = list(data.get("plugins", []))
+
+def by_id(pid):
+    for p in plugins:
+        if p["id"] == pid:
+            return p
+    return None
+
+def jar_path(entry):
+    return repo / entry["dir"] / entry["jar"]
+
+if mode == "validate":
+    if not plugins:
+        print("ERRO: nenhum plugin no catálogo", file=sys.stderr)
+        sys.exit(1)
+    for p in plugins:
+        for key in ("id", "dir", "build", "jar", "menuCategory"):
+            if key not in p:
+                print(f"ERRO: campo ausente {key} em {p}", file=sys.stderr)
+                sys.exit(1)
+        if p["build"] not in ("ant", "make", "jar"):
+            print(f"ERRO: build desconhecido {p['build']} em {p['id']}", file=sys.stderr)
+            sys.exit(1)
+    sys.exit(0)
+
+if mode == "list":
+    for p in plugins:
+        jp = jar_path(p)
+        built = "sim" if jp.is_file() else "não"
+        print(f"{p['id']}\t{p['menuCategory']}\t{p['dir']}\tjar:{built}")
+    sys.exit(0)
+
+if mode == "discover":
+    known_dirs = {p["dir"] for p in plugins}
+    candidates = []
+    plugins_root = repo / "plugins"
+    if plugins_root.is_dir():
+        candidates.extend(sorted(plugins_root.iterdir()))
+    for child in sorted(repo.glob("pitiupi.*")):
+        if child.is_dir():
+            candidates.append(child)
+    seen = set()
+    for child in candidates:
+        if not child.is_dir():
+            continue
+        key = child.relative_to(repo).as_posix()
+        if key in seen:
+            continue
+        seen.add(key)
+        spi = list(child.rglob("META-INF/services/pitiupi.models.Plugin"))
+        if not spi:
+            continue
+        rel = key
+        status = "registrado" if rel in known_dirs else "sugerido"
+        build = "make" if (child / "Makefile").is_file() else "ant"
+        print(f"{status}\t{rel}\tbuild:{build}")
+    sys.exit(0)
+
+if mode == "resolve":
+    filter_mode = sys.argv[4]
+    arg = sys.argv[5] if len(sys.argv) > 5 else ""
+
+    selected = []
+    if filter_mode == "all":
+        selected = plugins
+    elif filter_mode == "category":
+        cat = arg.strip()
+        selected = [p for p in plugins if p["menuCategory"] == cat]
+        if not selected:
+            print(f"ERRO: categoria vazia ou inválida: {cat}", file=sys.stderr)
+            sys.exit(1)
+    elif filter_mode == "plugins":
+        ids = [x.strip() for x in arg.lower().split(",") if x.strip()]
+        for i in ids:
+            p = by_id(i)
+            if not p:
+                print(f"ERRO: id desconhecido no catálogo: {i}", file=sys.stderr)
+                sys.exit(1)
+            selected.append(p)
+    else:
+        print(f"ERRO: modo resolve {filter_mode}", file=sys.stderr)
+        sys.exit(1)
+
+    for p in selected:
+        print(p["id"])
+    sys.exit(0)
+
+if mode == "field":
+    pid = sys.argv[4]
+    field = sys.argv[5]
+    p = by_id(pid)
+    if not p:
+        sys.exit(1)
+    print(p[field])
+    sys.exit(0)
+
+print(f"ERRO: modo desconhecido {mode}", file=sys.stderr)
+sys.exit(1)
+PY
+}
+
+resolve_filter_mode() {
+  if [[ -n "${FILTER_PLUGINS:-}" ]]; then
+    echo "plugins"
+  elif [[ -n "${FILTER_CATEGORY:-}" ]]; then
+    echo "category"
+  else
+    echo "all"
+  fi
+}
+
+resolve_filter_arg() {
+  local mode="$1"
+  case "$mode" in
+    plugins) echo "${FILTER_PLUGINS}" ;;
+    category) echo "${FILTER_CATEGORY}" ;;
+    all) echo "" ;;
+  esac
+}
+
+selected_ids() {
+  local mode arg
+  mode="$(resolve_filter_mode)"
+  arg="$(resolve_filter_arg "$mode")"
+  registry_python resolve "$mode" "$arg"
+}
+
+build_core() {
+  (cd "${REPO_ROOT}/pitiupi" && ant jar)
+}
+
+build_one_plugin() {
+  local id="$1"
+  local dir build_cmd marker
+  dir="$(registry_python field "$id" dir)"
+  build_cmd="$(registry_python field "$id" build)"
+  if [[ "$build_cmd" == "jar" ]]; then
+    return 0
+  fi
+  case "$build_cmd" in
+    ant) marker="${REPO_ROOT}/${dir}/build.xml" ;;
+    make) marker="${REPO_ROOT}/${dir}/Makefile" ;;
+    *)
+      printf 'ERRO: build desconhecido para %s: %s\n' "$id" "$build_cmd" >&2
+      exit 1
+      ;;
+  esac
+  if [[ ! -f "${marker}" ]]; then
+    printf 'Plugin %s ausente nesta máquina; não será carregado.\n' "$id"
+    return 0
+  fi
+  case "$build_cmd" in
+    ant) (cd "${REPO_ROOT}/${dir}" && ant jar) ;;
+    make) (cd "${REPO_ROOT}/${dir}" && make) ;;
+  esac
+}
+
+build_plugins_from_selection() {
+  local id
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    build_one_plugin "$id"
+  done < <(selected_ids)
+}
+
+running_on_wsl() {
+  [[ -r /proc/version ]] && grep -qi microsoft /proc/version
+}
+
+running_on_git_bash() {
+  [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == mingw* ]]
+}
+
+to_windows_path() {
+  if running_on_wsl && command -v wslpath >/dev/null 2>&1; then
+    wslpath -w "$1"
+  elif command -v cygpath >/dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf 'ERRO: não sei converter o caminho para o Windows: %s\n' "$1" >&2
+    exit 1
+  fi
+}
+
+link_plugins_from_selection() {
+  local mode="${1:-link}"
+  local id dir jar_rel link_name src_abs
+  mkdir -p "${PLUGINS_DIR}"
+  find "${PLUGINS_DIR}" -maxdepth 1 -type l -name '*.jar' -delete
+
+  while IFS= read -r id; do
+    [[ -z "$id" ]] && continue
+    dir="$(registry_python field "$id" dir)"
+    jar_rel="$(registry_python field "$id" jar)"
+    link_name="${id}.jar"
+    src_abs="${REPO_ROOT}/${dir}/${jar_rel}"
+    if [[ ! -f "${src_abs}" ]]; then
+      local marker=""
+      local build_cmd
+      build_cmd="$(registry_python field "$id" build)"
+      if [[ "$build_cmd" == "jar" ]]; then
+        printf 'ERRO: JAR ausente: %s\n' "${src_abs}" >&2
+        exit 1
+      fi
+      case "$build_cmd" in
+        ant) marker="${REPO_ROOT}/${dir}/build.xml" ;;
+        make) marker="${REPO_ROOT}/${dir}/Makefile" ;;
+      esac
+      if [[ -z "${marker}" || ! -f "${marker}" ]]; then
+        printf 'Plugin %s ausente nesta máquina; não será carregado.\n' "$id"
+        continue
+      fi
+      printf 'ERRO: JAR ausente: %s\n' "${src_abs}" >&2
+      exit 1
+    fi
+    if [[ "${mode}" == "copy" ]]; then
+      cp -L "${src_abs}" "${PLUGINS_DIR}/${link_name}"
+    else
+      ln -sf "${src_abs}" "${PLUGINS_DIR}/${link_name}"
+    fi
+  done < <(selected_ids)
+
+  local count
+  count="$(find "${PLUGINS_DIR}" -maxdepth 1 -name '*.jar' 2>/dev/null | wc -l)"
+  if [[ "$count" -eq 0 ]]; then
+    printf 'AVISO: nenhum plugin em %s.\n' "${PLUGINS_DIR}" >&2
+  else
+    printf 'Plugins ativos em %s:\n' "${PLUGINS_DIR}"
+    ls -1 "${PLUGINS_DIR}"/*.jar
+    if [[ "${mode}" != "copy" ]]; then
+      local jar
+      for jar in "${PLUGINS_DIR}"/*.jar; do
+        [[ -L "$jar" ]] && printf '  -> %s\n' "$(readlink -f "$jar")"
+      done
+    fi
+  fi
+}
+
+launch_windows_java() {
+  local home_win jar_win ps1
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    printf 'ERRO: o PowerShell do Windows não está no PATH.\n' >&2
+    exit 1
+  fi
+  home_win="$(to_windows_path "${PITIUPI_HOME}")"
+  jar_win="$(to_windows_path "${CORE}/dist/pitiupi.jar")"
+  ps1="$(to_windows_path "${REPO_ROOT}/scripts/lib/launch-windows.ps1")"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${ps1}" -PitiupiHome "${home_win}" -Jar "${jar_win}"
+}
+
+check_tools() {
+  local ok=0
+  for cmd in java javac ant make python3; do
+    if command -v "${cmd}" >/dev/null 2>&1; then
+      printf 'OK %s\n' "${cmd}"
+    else
+      printf 'ERRO: %s não está no PATH\n' "${cmd}" >&2
+      ok=1
+    fi
+  done
+  if [[ ! -f "${REGISTRY}" ]]; then
+    printf 'ERRO: catálogo ausente: %s\n' "${REGISTRY}" >&2
+    ok=1
+  else
+    registry_python validate
+    printf 'OK plugins.registry.json\n'
+  fi
+  if command -v javac >/dev/null 2>&1; then
+    local javac_major
+    javac_major="$(javac -version 2>&1 | grep -oE '[0-9]+' | head -1)"
+    if [[ -n "${javac_major}" && "${javac_major}" -lt 17 ]]; then
+      printf 'ERRO: javac precisa ser Java 17 ou superior (atual: %s)\n' "$(javac -version 2>&1)" >&2
+      ok=1
+    fi
+  fi
+  return "${ok}"
+}
+
+CMD="run"
+FILTER_PLUGINS=""
+FILTER_CATEGORY=""
+USE_ALL=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    run | build | link | check | list | discover)
+      CMD="$1"
+      shift
+      ;;
+    --all)
+      USE_ALL=1
+      FILTER_PLUGINS=""
+      FILTER_CATEGORY=""
+      shift
+      ;;
+    --plugins)
+      USE_ALL=0
+      FILTER_PLUGINS="${2:-}"
+      FILTER_CATEGORY=""
+      shift 2
+      ;;
+    --category)
+      USE_ALL=0
+      FILTER_CATEGORY="${2:-}"
+      FILTER_PLUGINS=""
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'Argumento desconhecido: %s\n' "$1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$USE_ALL" -eq 1 && -z "$FILTER_PLUGINS" && -z "$FILTER_CATEGORY" ]]; then
+  : # default --all
+elif [[ -n "$FILTER_PLUGINS" && -n "$FILTER_CATEGORY" ]]; then
+  printf 'ERRO: use apenas um de --plugins, --category ou --all\n' >&2
+  exit 1
+fi
+
+case "${CMD}" in
+  check)
+    check_tools
+    ;;
+  list)
+    registry_python list
+    ;;
+  discover)
+    registry_python discover
+    ;;
+  link)
+    link_plugins_from_selection
+    printf '\nPara abrir o Pitiupi: %s run --all\n' "${REPO_ROOT}/scripts/pitiupi.sh"
+    ;;
+  build)
+    check_tools || exit 1
+    build_core
+    build_plugins_from_selection
+    link_plugins_from_selection
+    ;;
+  run)
+    check_tools || exit 1
+    build_core
+    build_plugins_from_selection
+    if running_on_wsl || running_on_git_bash; then
+      link_plugins_from_selection copy
+      launch_windows_java
+      printf 'Janela aberta no Windows. Cabo e Wi-Fi são as placas desta máquina.\n'
+      printf 'Plugins em %s\n' "${PLUGINS_DIR}"
+    else
+      link_plugins_from_selection link
+      exec java -jar "${CORE}/dist/pitiupi.jar"
+    fi
+    ;;
+esac
