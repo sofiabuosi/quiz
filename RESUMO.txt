@@ -1,0 +1,100 @@
+RESUMO DO PROJETO — QUIZ 
+
+IDENTIFICAÇÃO
+
+O Quizamigos é um plugin desenvolvido em Java, com interface Swing, para integração à plataforma Pitiupi.
+
+FUNCIONALIDADES
+
+-   Modo com anfitrião: permite criar perguntas, cadastrar quatro alternativas, indicar a resposta correta e escolher entre 10, 20, 30, 45 ou 60 segundos para cada rodada.
+-   Modo normal: disponibiliza o quiz Olivia Rodrigo, com cinco perguntas e tempo padrão de 20 segundos por pergunta.
+-   Comunicação em rede: mensagens de pergunta, resposta e resultado são serializadas e enviadas aos participantes.
+-   Temporizador compartilhado: cada pergunta transmite um prazo absoluto, utilizado pelos participantes para sincronizar o encerramento das respostas.
+-   Placar: apresenta a pontuação e identifica o vencedor ou o empate.
+-   Persistência: cada computador salva localmente o histórico, os pontos e as vitórias.
+-   Interface: apresenta visual retrô roxo, capa ilustrada, imagem específica de Olivia Rodrigo, cortina animada, música de fundo e efeitos sonoros.
+
+CORREÇÕES IMPLEMENTADAS APÓS O FEEDBACK
+
+-   Proteção de partidas em andamento: uma nova partida anunciada por outro computador não substitui uma partida da qual o participante já esteja participando.
+-   Entrada por convite: quem está ocioso recebe um convite para entrar em uma nova partida. A entrada depende da aceitação; convites recusados não devem reaparecer a cada pergunta.
+-   Respostas no modo com anfitrião: os participantes podem enviar suas respostas, enquanto o anfitrião não responde à própria pergunta.
+-   Validação das alternativas: a pontuação compara corretamente os índices das opções A, B, C e D, sem depender de uma letra específica.
+-   Histórico: a conclusão de uma partida é registrada localmente, inclusive para jogadores que terminaram com zero pontos. A identificação da partida evita registros duplicados.
+-   Erros de persistência: falhas ao criar o identificador, ler ou gravar o histórico deixam de ser silenciosas e devem ser informadas na interface.
+
+HISTÓRICO
+
+O histórico é armazenado separadamente em cada computador:
+
+    ~/.pitiupi/quizamigos/history.properties
+
+O identificador persistente de cada jogador fica em:
+
+    ~/.pitiupi/quizamigos/player.id
+
+O histórico contém pontos, vitórias e partidas. Ele é local e não é sincronizado entre computadores; portanto, não representa um ranking global compartilhado pela rede.
+
+INTERFACE E ÁUDIO
+
+-   Na tela inicial, o botão do quiz pronto é identificado como “MODO NORMAL”.
+-   A frase “ESCOLHA COMO JOGAR” foi retirada da tela inicial.
+-   Na configuração do modo com anfitrião, o campo de duração é identificado como “TEMPO”.
+-   O controle de música deve estar disponível tanto na tela inicial quanto na configuração do modo com anfitrião.
+-   O estado do controle de música deve permanecer sincronizado ao alternar entre essas telas.
+-   O controle alterna entre “MÚSICA: LIGADA” e “MÚSICA: MUTADA”.
+-   A opção de mutar atua somente sobre a música de fundo. Os efeitos sonoros do jogo continuam funcionando.
+
+Comportamento previsto da trilha: tocar no menu e durante a configuração; parar quando a partida começar; permanecer parada durante as perguntas; e retornar depois do efeito de aplausos no placar, respeitando a opção de música mutada.
+
+TECNOLOGIAS
+
+-   Java 17 ou superior.
+-   Swing para a interface gráfica.
+-   Apache Ant para compilação, testes e geração dos JARs.
+-   Java Serialization para as mensagens de rede.
+-   Java Sound para música e efeitos em WAV.
+-   Arquivos Properties para persistência local.
+
+ORGANIZAÇÃO DO CÓDIGO
+
+Código do plugin:
+
+    plugins/quizamigos/src/quizamigos/
+
+Testes:
+
+    plugins/quizamigos/test/quizamigos/
+
+Núcleo Pitiupi:
+
+    pitiupi/
+
+Inicializador:
+
+    scripts/pitiupi.sh
+
+Catálogo de plugins:
+
+    plugins.registry.json
+
+TESTES AUTOMATIZADOS
+
+A suíte contém seis classes de teste:
+
+1.  QuizMessageSerializationTest: testa a serialização e a recuperação das mensagens de jogo.
+2.  QuizStorePersistenceTest: testa a identidade local, o histórico, a pontuação, a deduplicação de partidas e o registro de jogadores sem pontos.
+3.  QuizCatalogTest: confirma o quiz Olivia Rodrigo, com cinco perguntas e quatro alternativas por pergunta.
+4.  MusicPlayerAudioTest: verifica os efeitos sonoros, o fallback da cortina e a ausência de som de clique.
+5.  QuizBehaviorRulesTest: verifica as regras de entrada em partidas, a proteção de uma partida ativa, as respostas no modo com anfitrião e a validação das alternativas A–D.
+6.  QuizNetworkProtocolTest: simula dois clientes recebendo o mesmo prazo e enviando respostas diferentes.
+
+Os testes automatizados cobrem regras e cenários simulados. Eles não substituem o teste manual da interface nem a validação da comunicação entre dois computadores reais.
+
+LIMITAÇÕES 
+
+-   O histórico é local a cada computador; não existe ranking global sincronizado.
+-   A comunicação de partidas utiliza broadcast. A proteção contra a troca involuntária de partida ocorre na recepção das mensagens; participantes ociosos precisam aceitar o convite para entrar em outra partida.
+-   No modo normal, o computador que inicia a partida é o coordenador técnico do relógio e da apuração.
+-   A perda da conexão ou o encerramento do coordenador durante a partida pode interromper a apuração nos demais participantes.
+-   Os relógios dos computadores precisam estar sincronizados.
