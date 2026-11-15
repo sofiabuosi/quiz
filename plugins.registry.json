@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    {
+      "id": "quizamigos",
+      "dir": "plugins/quizamigos",
+      "build": "ant",
+      "jar": "dist/pitiupi.quizamigos.jar",
+      "menuCategory": "Jogos"
+    }
+  ]
+}
