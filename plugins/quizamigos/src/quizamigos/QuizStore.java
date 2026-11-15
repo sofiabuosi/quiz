@@ -5,6 +5,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -19,6 +21,7 @@ final class QuizStore {
     private final Path historyFile;
     private final Properties history = new Properties();
     private final String playerId;
+    private String storageError = "";
 
     QuizStore() {
         this(Path.of(System.getProperty("user.home"), ".pitiupi", "quizamigos"));
@@ -34,24 +37,33 @@ final class QuizStore {
 
     String getPlayerId() { return playerId; }
 
-    synchronized void completeGame(
+    synchronized String getStorageError() { return storageError; }
+
+    synchronized boolean completeGame(
             String gameId, String[] playerIds, String[] playerNames, int[] playerScores) {
-        if (gameId == null || gameId.isBlank() || history.getProperty("game." + gameId) != null) {
-            return;
+        if (gameId == null || gameId.isBlank()) {
+            storageError = "Identificador da partida inválido; histórico não foi atualizado.";
+            return false;
         }
+        if (history.getProperty("game." + gameId) != null) return true;
+
         int count = Math.min(playerIds == null ? 0 : playerIds.length,
                 Math.min(playerNames == null ? 0 : playerNames.length,
                         playerScores == null ? 0 : playerScores.length));
+        Properties previous = copyHistory();
         if (count == 0) {
             history.setProperty("game." + gameId, "done");
-            saveHistory();
-            return;
+            if (!saveHistory()) {
+                restoreHistory(previous);
+                return false;
+            }
+            return true;
         }
 
         int highest = Integer.MIN_VALUE;
         for (int i = 0; i < count; i++) {
             if (playerIds[i] != null && !playerIds[i].isBlank()) {
-                highest = Math.max(highest, playerScores[i]);
+                highest = Math.max(highest, Math.max(0, playerScores[i]));
             }
         }
         for (int i = 0; i < count; i++) {
@@ -61,16 +73,21 @@ final class QuizStore {
             String oldName = history.getProperty(prefix + ".name", "Jogador");
             String newName = playerNames[i] == null || playerNames[i].isBlank()
                     ? oldName : playerNames[i].trim();
+            int score = Math.max(0, playerScores[i]);
             history.setProperty(prefix + ".name", newName);
             history.setProperty(prefix + ".points", Integer.toString(
-                    intProperty(prefix + ".points") + Math.max(0, playerScores[i])));
+                    intProperty(prefix + ".points") + score));
             history.setProperty(prefix + ".games", Integer.toString(intProperty(prefix + ".games") + 1));
-            boolean winner = playerScores[i] == highest && highest > 0;
+            boolean winner = score == highest && highest > 0;
             history.setProperty(prefix + ".wins", Integer.toString(
                     intProperty(prefix + ".wins") + (winner ? 1 : 0)));
         }
         history.setProperty("game." + gameId, "done");
-        saveHistory();
+        if (!saveHistory()) {
+            restoreHistory(previous);
+            return false;
+        }
+        return true;
     }
 
     synchronized List<PlayerStats> getRanking() {
@@ -81,7 +98,7 @@ final class QuizStore {
             String encodedId = prefix.substring("player.".length());
             String id;
             try {
-                id = new String(Base64.getUrlDecoder().decode(encodedId), java.nio.charset.StandardCharsets.UTF_8);
+                id = new String(Base64.getUrlDecoder().decode(encodedId), StandardCharsets.UTF_8);
             } catch (IllegalArgumentException ex) {
                 continue;
             }
@@ -109,6 +126,7 @@ final class QuizStore {
             Files.writeString(playerIdFile, value);
             return value;
         } catch (IOException ex) {
+            storageError = "Não foi possível criar o identificador local: " + ex.getMessage();
             return UUID.randomUUID().toString();
         }
     }
@@ -121,7 +139,8 @@ final class QuizStore {
                     history.load(input);
                 }
             }
-        } catch (IOException ignored) {
+        } catch (IOException | IllegalArgumentException ex) {
+            storageError = "Não foi possível ler o histórico local: " + ex.getMessage();
         }
     }
 
@@ -132,24 +151,43 @@ final class QuizStore {
 
     private String playerKey(String id) {
         String encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(
-                id.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                id.getBytes(StandardCharsets.UTF_8));
         return "player." + encoded;
     }
 
-    private void saveHistory() {
+    private Properties copyHistory() {
+        Properties copy = new Properties();
+        copy.putAll(history);
+        return copy;
+    }
+
+    private void restoreHistory(Properties previous) {
+        history.clear();
+        history.putAll(previous);
+    }
+
+    private boolean saveHistory() {
+        Path temp = directory.resolve("history.properties.tmp");
         try {
             Files.createDirectories(directory);
-            Path temp = directory.resolve("history.properties.tmp");
             try (OutputStream output = Files.newOutputStream(temp)) {
                 history.store(output, "Histórico local do Quiz entre amigos");
             }
             try {
-                Files.move(temp, historyFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                        java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                Files.move(temp, historyFile, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicNotSupported) {
-                Files.move(temp, historyFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temp, historyFile, StandardCopyOption.REPLACE_EXISTING);
             }
-        } catch (IOException ignored) {
+            if (storageError.startsWith("Não foi possível gravar o histórico local:")) {
+                storageError = "";
+            }
+            return true;
+        } catch (IOException ex) {
+            storageError = "Não foi possível gravar o histórico local em "
+                    + historyFile + ": " + ex.getMessage();
+            try { Files.deleteIfExists(temp); } catch (IOException ignored) { }
+            return false;
         }
     }
 
