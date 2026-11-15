@@ -86,6 +86,14 @@
                 <pathelement location="${test.build.dir}" />
             </classpath>
         </java>
+        <java classname="quizamigos.QuizBehaviorRulesTest"
+              fork="true" failonerror="true">
+            <classpath>
+                <pathelement location="${core.jar}" />
+                <pathelement location="${build.dir}" />
+                <pathelement location="${test.build.dir}" />
+            </classpath>
+        </java>
         <java classname="quizamigos.QuizNetworkProtocolTest"
               fork="true" failonerror="true">
             <classpath>

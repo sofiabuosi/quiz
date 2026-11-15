@@ -34,7 +34,23 @@ public final class QuizStorePersistenceTest {
         QuizStore afterSecond = new QuizStore(directory);
         check(afterSecond.getRanking().get(0).name().equals("Bia"), "ranking atualizado após nova partida");
         check(afterSecond.getRanking().get(0).wins() == 1, "vitória da segunda partida persistida");
-        System.out.println("OK: histórico local, ID estável e deduplicação de partidas.");
+
+        afterSecond.completeGame("match-zero", new String[] {"p3"},
+                new String[] {"Caio"}, new int[] {0});
+        QuizStore afterZeroScore = new QuizStore(directory);
+        QuizStore.PlayerStats zeroScore = afterZeroScore.getRanking().stream()
+                .filter(row -> "p3".equals(row.id())).findFirst().orElseThrow();
+        check(zeroScore.games() == 1 && zeroScore.points() == 0 && zeroScore.wins() == 0,
+                "partida sem pontos também deve aparecer no histórico");
+
+        Path blockedPath = Files.createTempFile("quizamigos-not-a-directory", ".tmp");
+        QuizStore blocked = new QuizStore(blockedPath.resolve("history"));
+        boolean saved = blocked.completeGame("match-fail", new String[] {"p4"},
+                new String[] {"Duda"}, new int[] {1});
+        check(!saved && blocked.getStorageError() != null && !blocked.getStorageError().isBlank(),
+                "falha de gravação deve ser informada e não confirmada como sucesso");
+
+        System.out.println("OK: histórico local, ID estável, deduplicação, zero pontos e erro de gravação.");
     }
 
     private static void check(boolean condition, String description) {

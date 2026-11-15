@@ -92,6 +92,7 @@ final class QuizPanel extends JPanel {
     private final Map<String, String> scoreNames = new LinkedHashMap<>();
     private final Map<String, Integer> receivedAnswers = new LinkedHashMap<>();
     private final Set<String> answeredPlayerIds = new HashSet<>();
+    private final Set<String> declinedQuizIds = new HashSet<>();
 
     private JPanel gamePanel;
     private JPanel hostPanel;
@@ -113,6 +114,7 @@ final class QuizPanel extends JPanel {
     private long deadlineEpochMillis;
     private boolean isCoordinator;
     private boolean isHostedMode;
+    private boolean gameSessionActive;
     private boolean roundActive;
     private boolean hasAnswered;
     private boolean deadlineHandled;
@@ -268,6 +270,12 @@ panel.add(heading, BorderLayout.NORTH);
         publish.addActionListener(event -> startHostedRound());
         JButton back = retroButton("VOLTAR");
         back.addActionListener(event -> {
+            gameSessionActive = false;
+            declinedQuizIds.clear();
+            quizId = null;
+            questionId = null;
+            isCoordinator = false;
+            isHostedMode = false;
             cardLayout.show(cards, CARD_HOME);
             if (!musicPlayer.isPlaying()) musicPlayer.playLoopWithFadeIn();
         });
@@ -447,6 +455,8 @@ panel.add(heading, BorderLayout.NORTH);
         scores.clear();
         scoreNames.clear();
         scoreNames.put(localPlayerId, localPlayerName);
+        scores.put(localPlayerId, 0);
+        gameSessionActive = true;
         receivedAnswers.clear();
         answeredPlayerIds.clear();
         scoreboardArea.setText("Aguardando a primeira resposta...\n");
@@ -558,7 +568,8 @@ panel.add(heading, BorderLayout.NORTH);
     }
 
     private void submitAnswer() {
-        if (!roundActive || hasAnswered || isHostedMode || mySelectedOption < 0) {
+        if (!QuizBehaviorRules.canSubmitAnswer(
+                roundActive, hasAnswered, isHostedMode, isCoordinator, mySelectedOption)) {
             if (mySelectedOption < 0) showWarning("Escolha uma alternativa antes de enviar.");
             return;
         }
@@ -600,8 +611,10 @@ panel.add(heading, BorderLayout.NORTH);
         showRoundReveal(correctOption, receivedAnswers.size(), finalQuestion);
         sendToRoom(result);
         if (finalQuestion) {
-            persistFinalScores();
-            gameStatusLabel.setText("Fim do quiz! O placar final foi salvo neste computador.");
+            boolean saved = persistFinalScores();
+            gameStatusLabel.setText(saved
+                    ? "Fim do quiz! Histórico salvo neste computador."
+                    : "Fim do quiz! Não foi possível salvar o histórico: " + store.getStorageError());
         } else {
             gameStatusLabel.setText("Resposta revelada. O placar aparecerá antes da próxima pergunta.");
         }
@@ -611,7 +624,7 @@ panel.add(heading, BorderLayout.NORTH);
         for (Map.Entry<String, Integer> entry : receivedAnswers.entrySet()) {
             String playerId = entry.getKey();
             scores.putIfAbsent(playerId, 0);
-            if (entry.getValue() == correctOption) {
+            if (QuizBehaviorRules.isCorrectOption(entry.getValue(), correctOption)) {
                 scores.put(playerId, scores.get(playerId) + 1);
             }
         }
@@ -646,8 +659,9 @@ panel.add(heading, BorderLayout.NORTH);
     private void receiveQuestion(QuizMessage message) {
         if (localPlayerId.equals(message.getHostId())) return;
         String[] options = message.getOptions();
-        if (message.getQuizId() == null || message.getQuestionId() == null
-                || message.getQuestion() == null || options.length != 4
+        if (message.getQuizId() == null || message.getQuizId().isBlank()
+                || message.getQuestionId() == null || message.getQuestion() == null
+                || options == null || options.length != 4
                 || message.getDeadlineEpochMillis() <= 0
                 || !(QuizMessage.MODE_HOSTED.equals(message.getMode())
                     || QuizMessage.MODE_OPEN.equals(message.getMode()))) {
@@ -655,10 +669,31 @@ panel.add(heading, BorderLayout.NORTH);
             return;
         }
         if (!message.getQuizId().equals(quizId)) {
+            String incomingQuizId = message.getQuizId();
+            if (declinedQuizIds.contains(incomingQuizId)) return;
+            if (gameSessionActive) {
+                gameStatusLabel.setText("Outra partida foi anunciada. Sua partida atual foi preservada.");
+                declinedQuizIds.add(incomingQuizId);
+                return;
+            }
+            if (!QuizBehaviorRules.shouldOfferJoin(
+                    quizId, incomingQuizId, gameSessionActive, declinedQuizIds)) return;
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "" + safeName(message.getHostName()) + " iniciou uma partida de Quiz.\n"
+                            + "Deseja entrar nessa partida?",
+                    "Convite para partida", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (choice != JOptionPane.YES_OPTION) {
+                declinedQuizIds.add(incomingQuizId);
+                gameStatusLabel.setText("Convite recusado. Sua tela e sua partida não foram alteradas.");
+                return;
+            }
+            gameSessionActive = true;
             stopTimers();
-            quizId = message.getQuizId();
+            quizId = incomingQuizId;
             scores.clear();
             scoreNames.clear();
+            scores.put(localPlayerId, 0);
+            scoreNames.put(localPlayerId, localPlayerName);
             receivedAnswers.clear();
             answeredPlayerIds.clear();
         }
@@ -729,8 +764,10 @@ panel.add(heading, BorderLayout.NORTH);
         loadScoreSnapshot(message);
         showRoundReveal(correctOption, message.getTotalAnswers(), message.isFinalResult());
         if (message.isFinalResult()) {
-            persistFinalScores();
-            gameStatusLabel.setText("Placar final recebido e salvo no histórico local deste computador.");
+            boolean saved = persistFinalScores();
+            gameStatusLabel.setText(saved
+                    ? "Placar final recebido e salvo no histórico local deste computador."
+                    : "Placar final recebido, mas o histórico não pôde ser salvo: " + store.getStorageError());
         } else if (QuizMessage.MODE_HOSTED.equals(currentMode)) {
             gameStatusLabel.setText("Resposta revelada pelo anfitrião. Aguardando a próxima pergunta.");
         } else {
@@ -746,10 +783,12 @@ panel.add(heading, BorderLayout.NORTH);
         String[] names = message.getScorePlayerNames();
         int count = Math.min(values.length, Math.min(ids.length, names.length));
         for (int i = 0; i < count; i++) {
-            if (ids[i] == null) continue;
-            scores.put(ids[i], values[i]);
+            if (ids[i] == null || ids[i].isBlank()) continue;
+            scores.put(ids[i], Math.max(0, values[i]));
             scoreNames.put(ids[i], safeName(names[i]));
         }
+        scores.putIfAbsent(localPlayerId, 0);
+        scoreNames.putIfAbsent(localPlayerId, localPlayerName);
         updateScoreboard();
     }
 
@@ -866,7 +905,10 @@ panel.add(heading, BorderLayout.NORTH);
             String winnerText = winners.isEmpty() ? "Sem vencedor" : String.join(" e ", winners);
             revealLabel.setText("GANHADOR(ES): " + winnerText + " · " + Math.max(0, highest) + " ponto(s)");
         }
-        gameStatusLabel.setText("PLACAR FINAL · Histórico gravado apenas neste computador.");
+        String storageError = store.getStorageError();
+        gameStatusLabel.setText(storageError == null || storageError.isBlank()
+                ? "PLACAR FINAL · Histórico gravado neste computador."
+                : "PLACAR FINAL · " + storageError);
         nextHostedQuestionButton.setVisible(false);
         finishHostedButton.setVisible(false);
         revealNowButton.setVisible(false);
@@ -878,7 +920,10 @@ panel.add(heading, BorderLayout.NORTH);
         runAfterEffect(applauseDuration, () -> musicPlayer.playLoopWithFadeIn());
     }
 
-    private void persistFinalScores() {
+    private boolean persistFinalScores() {
+        if (quizId == null || quizId.isBlank()) return false;
+        scores.putIfAbsent(localPlayerId, 0);
+        scoreNames.putIfAbsent(localPlayerId, localPlayerName);
         List<Map.Entry<String, Integer>> ranking = sortedScores();
         String[] ids = new String[ranking.size()];
         String[] names = new String[ranking.size()];
@@ -888,7 +933,7 @@ panel.add(heading, BorderLayout.NORTH);
             names[i] = scoreNames.getOrDefault(ids[i], "Jogador");
             values[i] = ranking.get(i).getValue();
         }
-        store.completeGame(quizId, ids, names, values);
+        return store.completeGame(quizId, ids, names, values);
     }
 
     private void updateScoreboard() {
@@ -929,6 +974,10 @@ panel.add(heading, BorderLayout.NORTH);
             }
         }
         text.append("\nEste ranking existe apenas nesta instalação. Cada computador guarda seu próprio histórico.");
+        String storageError = store.getStorageError();
+        if (storageError != null && !storageError.isBlank()) {
+            text.append("\n\nAVISO: ").append(storageError);
+        }
         historyArea.setText(text.toString());
         historyArea.setCaretPosition(0);
         cardLayout.show(cards, CARD_HISTORY);
@@ -944,6 +993,12 @@ panel.add(heading, BorderLayout.NORTH);
         }
         stopTimers();
         roundActive = false;
+        gameSessionActive = false;
+        declinedQuizIds.clear();
+        quizId = null;
+        questionId = null;
+        isCoordinator = false;
+        isHostedMode = false;
         showIntro(false);
     }
 
@@ -975,6 +1030,7 @@ panel.add(heading, BorderLayout.NORTH);
         stopTimers();
         introPanel.stopAnimation();
         roundActive = false;
+        gameSessionActive = false;
         musicPlayer.shutdown();
         cardLayout.show(cards, CARD_HOME);
     }
