@@ -1,0 +1,76 @@
+INSTRUÇÕES DE COMPILAÇÃO, EXECUÇÃO E TESTE
+
+1.  PREPARAR IMAGENS E SONS
+
+Os recursos usados pelo jogo ficam em:
+
+    plugins/quizamigos/src/quizamigos/assets/
+
+Arquivos esperados:
+
+-   quiz-cover.jpg: imagem principal do menu.
+-   olivia-rodrigo.jpg: imagem usada no quiz Olivia Rodrigo.
+-   music.wav: música de fundo.
+-   curtain.wav: som da cortina.
+-   reveal-to-score.wav: transição entre a resposta e o placar.
+-   scoreboard.wav: aplausos/placar.
+
+Se a pasta do plugin contiver o script scripts/setup-media.sh e for necessário preparar a mídia novamente, execute:
+
+    cd ~/Documents/quiz/quiz/plugins/quizamigos
+    chmod +x scripts/setup-media.sh
+    ./scripts/setup-media.sh
+
+Os áudios são convertidos para WAV PCM e incluídos no JAR durante a compilação. O jogo não solicita que cada participante escolha arquivos de áudio.
+
+3.  COMPILAR O NÚCLEO E O PLUGIN
+
+Abra um terminal na raiz da pasta do projeto.
+
+Primeiro, compile o núcleo Pitiupi:
+
+    cd pitiupi
+    ant jar
+    cd ..
+
+Depois, compile o plugin, gere o JAR e execute os seis testes automatizados:
+
+    ant -f plugins/quizamigos/build.xml clean jar test
+
+O JAR do plugin será criado em:
+
+    plugins/quizamigos/dist/pitiupi.quizamigos.jar
+
+O comando de compilação e teste pode ser executado novamente sempre que o código mudar.
+
+4.  VERIFICAR E EXECUTAR A APLICAÇÃO
+
+Na raiz do projeto, execute:
+
+    ./scripts/pitiupi.sh check
+    ./scripts/pitiupi.sh list
+    ./scripts/pitiupi.sh run --all
+
+O comando run –all compila o núcleo e os plugins registrados, atualiza a pasta local de plugins do Pitiupi e abre a aplicação. Como o catálogo desta entrega contém o Quizamigos, o plugin aparece na categoria Jogos.
+
+Também é possível executar somente o plugin registrado:
+
+    ./scripts/pitiupi.sh run --plugins quizamigos
+
+5.  TESTE DE REDE COM DUAS PESSOAS
+
+O teste mais representativo utiliza dois computadores na mesma rede, ambos com Pitiupi e com a mesma versão do plugin.
+
+1.  Abra o Pitiupi nos dois computadores.
+2.  Entre na mesma sala/rede.
+3.  Abra o Quizamigos nos dois computadores.
+4.  Inicie uma partida e confira se os dois participantes recebem a mesma pergunta e o mesmo prazo.
+5.  Enquanto a partida estiver em andamento em um computador, tente iniciar outra partida no outro. A partida que já estava em andamento deve ser preservada; o participante não deve ser transferido automaticamente para a nova partida.
+6.  Em um computador que não esteja participando de uma partida, inicie um novo quiz no outro computador. O participante ocioso deve receber um convite e só deve entrar se aceitar. Se recusar, o mesmo convite não deve reaparecer a cada pergunta.
+7.  No modo com anfitrião, crie perguntas com quatro alternativas e teste, em rodadas separadas, as respostas corretas A, B, C e D. Os participantes devem poder responder, e a pontuação deve ser atribuída a quem selecionar a alternativa correta.
+8.  Confirme que o anfitrião não pode responder à própria pergunta.
+9.  Ao finalizar uma partida, abra o histórico e confira os pontos, as vitórias e o total de partidas. Confira também se jogadores com zero pontos aparecem no registro.
+10. Repita a consulta ao histórico em cada computador. Os dados devem permanecer locais a cada instalação.
+
+A comunicação continua usando broadcast. A proteção contra a troca involuntária de partida é aplicada na recepção das mensagens; quando o computador está ocioso, a entrada em outra partida depende da aceitação do convite.
+
